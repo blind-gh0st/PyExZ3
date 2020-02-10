@@ -1,52 +1,93 @@
-FROM debian:buster
-RUN apt clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    apt clean && \
-    apt update && \
-    DEBIAN_FRONTEND='noninteractive' apt upgrade -qy && \
-    DEBIAN_FRONTEND='noninteractive' apt install -qy --fix-missing git \
-                                                     python3 \
-                                                     graphviz \
-                                                     graphviz-dev \
-                                                     g++ \
-                                                     make \
-                                                     python3-examples \
-                                                     libgmp-dev \
-                                                     libboost-all-dev \
-                                                     default-jdk \
-                                                     swig \
-                                                     python3-dev \
-                                                     cmake \
-                                                     python3-numpy \
-                                                     python3-scipy \
-                                                     python3-pip \
-                                                     python3-sexpdata \
-                                                     python3-coverage \
-                                                     python3-cvxopt \
-                                                     libatlas-base-dev \
-                                                     wget \
-                                                     gfortran && \
-    pip3 install -U cvxpy && \
-    git clone https://github.com/Z3Prover/z3.git --branch z3-4.8.7 /tmp/z3 && \
-    git clone https://github.com/CVC4/CVC4.git --branch 1.7 /tmp/CVC4 && \
-    git clone https://github.com/thomasjball/PyExZ3.git /PyExZ3
+FROM debian:buster AS z3
 WORKDIR /tmp/z3
-RUN python3 scripts/mk_make.py --python
-WORKDIR /tmp/z3/build
-RUN make && \
-    make install
+RUN DEBIAN_FRONTEND='noninteractive' apt-get update -qy && \
+    DEBIAN_FRONTEND='noninteractive' apt-get install -qy \
+        git \
+        python3 \
+        g++ \
+        cmake \
+        python3-distutils \
+        python3-examples && \
+        git clone http://github.com/Z3Prover/z3.git --branch z3-4.8.7 /tmp/z3 && \
+    python3 /tmp/z3/scripts/mk_make.py --python && \
+    cd build && \
+    make && \
+    cd / && \
+    tar -cvJf /z3-archive.tar.xz \
+        /tmp/z3/*
+
+FROM debian:buster AS CVC4
 WORKDIR /tmp/CVC4
-RUN ./contrib/get-antlr-3.4 && \
+RUN DEBIAN_FRONTEND='noninteractive' apt-get update -qy && \
+    DEBIAN_FRONTEND='noninteractive' apt-get install -qy \
+        git \
+        python3 \
+        python3-dev \
+        swig \
+        default-jdk \
+        libboost-all-dev \
+        libgmp-dev \
+        cmake \
+        wget \
+        g++ && \
+    git clone https://github.com/CVC4/CVC4.git --branch 1.7 /tmp/CVC4 && \
+    ./contrib/get-antlr-3.4 && \
     export PYTHON_CONFIG=/usr/bin/python3-config && \
     ./configure.sh production \
-                --portfolio \
-                --optimized \
-                --antlr-dir=/tmp/CVC4/antlr-3.4 \
-                --language-bindings=python \
-                --python3
-WORKDIR /tmp/CVC4/build
-RUN make && \
-    make install
-WORKDIR /
-WORKDIR /PyExZ3
+               --portfolio \
+               --optimized \
+               --antlr-dir=/tmp/CVC4/antlr-3.4 \
+               --language-bindings=python \
+               --python3 && \
+    cd build && \
+    make && \
+    cd / && \
+    tar -cvJf /cvc4-archive.tar.xz \
+        /tmp/CVC4/*
+
+FROM debian:buster AS pyexz3
+COPY --from=z3 /z3-archive.tar.xz /z3-archive.tar.xz
+COPY --from=cvc4 /cvc4-archive.tar.xz /cvc4-archive.tar.xz
+RUN DEBIAN_FRONTEND='noninteractive' apt-get update -qy && \
+    DEBIAN_FRONTEND='noninteractive' apt-get install -qy \
+        git \
+        python3 \
+        graphviz \
+        graphviz-dev \
+        python3-numpy \
+        python3-scipy \
+        python3-pip \
+        python3-sexpdata \
+        python3-coverage \
+        python3-cvxopt \
+        libatlas-base-dev \
+        libgmp-dev \
+        libboost-all-dev \
+        cmake \
+        swig \
+        default-jdk \
+        gfortran && \
+    pip3 install -U cvxpy && \
+    mkdir -p /tmp/z3 && \
+    tar -xvf /z3-archive.tar.xz -C / && \
+    mkdir -p /tmp/CVC4 && \
+    tar -xvf cvc4-archive.tar.xz -C / && \
+    cd /tmp/z3/build && \
+    make install && \
+    cd /tmp/CVC4/build && \
+    make install && \
+    useradd -m -s /bin/bash pyexz3 && \
+    git clone https://github.com/thomasjball/PyExZ3.git /home/pyexz3/PyExZ3 && \
+    chown -R pyexz3:pyexz3 /home/pyexz3/PyExZ3 && \
+    apt-get remove --purge -qy \
+        libgmp-dev \
+        libboost-all-dev \
+        git \
+        swig && \
+    apt-get purge -qy openjdk* && \
+    apt-get autoremove -qy && \
+    cd / && \
+    rm -rf /tmp/z3 /tmp/CVC4 z3-archive.tar.xz cvc4-archive.tar.xz
+USER pyexz3
+WORKDIR /home/pyexz3/PyExZ3
 CMD ["python3","run_tests.py","test"]
