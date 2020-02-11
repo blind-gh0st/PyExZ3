@@ -87,7 +87,10 @@ RUN DEBIAN_FRONTEND='noninteractive' apt-get update -qy && \
     apt-get purge -qy openjdk* && \
     apt-get autoremove -qy && \
     cd / && \
-    rm -rf /tmp/z3 /tmp/CVC4 z3-archive.tar.xz cvc4-archive.tar.xz
+    rm -rf /tmp/z3 /tmp/CVC4 z3-archive.tar.xz cvc4-archive.tar.xz && \
+    sed -i.bak '1s;^;#!/usr/bin/env python3\n;' /home/pyexz3/PyExZ3/pyexz3.py && \
+    chmod +x /home/pyexz3/PyExZ3/pyexz3.py && \
+    echo 'export PATH=$PATH:/home/pyexz3/PyExZ3' | tee -a /home/pyexz3/.bashrc
 USER pyexz3
 WORKDIR /home/pyexz3/PyExZ3
 CMD ["python3","run_tests.py","test"]
